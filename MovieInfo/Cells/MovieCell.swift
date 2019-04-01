@@ -17,5 +17,11 @@ class MovieCell: UITableViewCell {
     @IBOutlet weak var releaseDateLabel: UILabel!
     @IBOutlet weak var ratingLabel: UILabel!
     
-
+    func configure(viewModel: MovieViewModel) {
+        titleLabel.text = viewModel.title
+        overviewLabel.text = viewModel.overview
+        releaseDateLabel.text = viewModel.releaseDate
+        ratingLabel.text = viewModel.ratingText
+        posterImageView.kf.setImage(with: viewModel.posterURL)
+    }
 }

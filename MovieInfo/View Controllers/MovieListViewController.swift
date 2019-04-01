@@ -15,12 +15,6 @@ class MovieListViewController: UIViewController {
     @IBOutlet weak var infoLabel: UILabel!
     @IBOutlet weak var segmentedControl: UISegmentedControl!
     
-    let dateFormatter: DateFormatter = {
-        $0.dateStyle = .medium
-        $0.timeStyle = .none
-        return $0
-    }(DateFormatter())
-    
     let movieService: MovieService = MovieStore.shared
     var movies = [Movie]() {
         didSet {
@@ -77,19 +71,9 @@ extension MovieListViewController: UITableViewDataSource, UITableViewDelegate {
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "MovieCell", for: indexPath) as! MovieCell
-        let movie = movies[indexPath.row]
         
-        
-        cell.titleLabel.text = movie.title
-        cell.releaseDateLabel.text = dateFormatter.string(from: movie.releaseDate)
-        cell.overviewLabel.text = movie.overview
-        cell.posterImageView.kf.setImage(with: movie.posterURL)
-        
-        let rating = Int(movie.voteAverage)
-        let ratingText = (0..<rating).reduce("") { (acc, _) -> String in
-            return acc + "⭐️"
-        }
-        cell.ratingLabel.text = ratingText
+        let viewModel = MovieViewModel(movie: movies[indexPath.row])
+        cell.configure(viewModel: viewModel)
 
         return cell
     }
