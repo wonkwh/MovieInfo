@@ -6,6 +6,8 @@
 //
 
 import UIKit
+import RxCocoa
+import RxSwift
 
 class MovieSearchViewController: UIViewController {
     
@@ -13,24 +15,51 @@ class MovieSearchViewController: UIViewController {
     @IBOutlet weak var infoLabel: UILabel!
     @IBOutlet weak var activityIndicatorView: UIActivityIndicatorView!
     
-    let dateFormatter: DateFormatter = {
-        $0.dateStyle = .medium
-        $0.timeStyle = .none
-        return $0
-    }(DateFormatter())
-    
     var service: MovieService = MovieStore.shared
-    var movies = [Movie]() {
-        didSet {
-            tableView.reloadData()
-        }
-    }
+    // rx
+    private var _movies = BehaviorRelay<[Movie]>(value: [])
+    private let _isSearching = BehaviorRelay<Bool>(value: false)
+    private let _info = BehaviorRelay<String?>(value: nil)
+
+    private let bag = DisposeBag()
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
         setupNavigationBar()
         setupTableView()
+        
+        let movies = _movies.asDriver()
+        movies.drive(onNext: { [unowned self] (_) in
+            self.tableView.reloadData()
+            }).disposed(by: bag)
+        
+        _isSearching.asDriver()
+            .drive(activityIndicatorView.rx.isAnimating)
+            .disposed(by: bag)
+        
+        _info.asDriver().drive(onNext: { [unowned self] (info) in
+            self.infoLabel.text = info
+            self.infoLabel.isHidden = (info != nil)
+        }).disposed(by: bag)
+        
+        let searchBar = self.navigationItem.searchController!.searchBar
+        searchBar.rx.searchButtonClicked
+                .asDriver(onErrorJustReturn: ())
+                .drive(onNext: {[unowned searchBar] in
+                    searchBar.resignFirstResponder()
+                    self.searchMovie(query: searchBar.text)
+                    }).disposed(by: bag)
+        
+        searchBar.rx.cancelButtonClicked
+                .asDriver(onErrorJustReturn: ())
+            .drive(onNext: {[unowned searchBar] in
+                searchBar.resignFirstResponder()
+                self._movies.accept([])
+                self._isSearching.accept(false)
+                self._info.accept("Start searching your favourite movies")
+
+                }).disposed(by: bag)
     }
     
     private func setupNavigationBar() {
@@ -40,7 +69,7 @@ class MovieSearchViewController: UIViewController {
         navigationItem.searchController?.hidesNavigationBarDuringPresentation = false
         
         navigationItem.searchController?.searchBar.sizeToFit()
-        navigationItem.searchController?.searchBar.delegate = self
+        //navigationItem.searchController?.searchBar.delegate = self
         navigationItem.hidesSearchBarWhenScrolling = false
         navigationController?.navigationBar.prefersLargeTitles = true
     }
@@ -57,21 +86,18 @@ class MovieSearchViewController: UIViewController {
             return
         }
         
-        self.movies = []
-        activityIndicatorView.startAnimating()
-        infoLabel.isHidden = true
+        self._movies.accept([])
+        self._isSearching.accept(true)
+        self._info.accept(nil)
         service.searchMovie(query: query, params: nil, successHandler: {[unowned self] (response) in
-            
-            self.activityIndicatorView.stopAnimating()
+            self._isSearching.accept(false)
             if response.totalResults == 0 {
-                self.infoLabel.text = "No results for \(query)"
-                self.infoLabel.isHidden = false
+                self._info.accept("No results for \(query)")
             }
-            self.movies = Array(response.results.prefix(5))
+            self._movies.accept(Array(response.results.prefix(6)))
         }) { [unowned self] (error) in
-            self.activityIndicatorView.stopAnimating()
-            self.infoLabel.isHidden = false
-            self.infoLabel.text = error.localizedDescription
+            self._isSearching.accept(false)
+            self._info.accept(error.localizedDescription)
         }
         
     }
@@ -81,53 +107,15 @@ class MovieSearchViewController: UIViewController {
 extension MovieSearchViewController: UITableViewDataSource, UITableViewDelegate {
     
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return movies.count
+        return _movies.value.count
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "MovieCell", for: indexPath) as! MovieCell
-        let movie = movies[indexPath.row]
-        
-        cell.titleLabel.text = movie.title
-        cell.releaseDateLabel.text = dateFormatter.string(from: movie.releaseDate)
-        cell.overviewLabel.text = movie.overview
-        cell.posterImageView.kf.setImage(with: movie.posterURL)
-        
-        let rating = Int(movie.voteAverage)
-        let ratingText = (0..<rating).reduce("") { (acc, _) -> String in
-            return acc + "⭐️"
-        }
-        cell.ratingLabel.text = ratingText
+        let movie = _movies.value[indexPath.row]
+        let movieViewModel = MovieViewModel(movie: movie)
+        cell.configure(viewModel: movieViewModel)
         
         return cell
     }
-        
 }
-
-extension MovieSearchViewController: UISearchBarDelegate {
-    
-    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
-        searchBar.resignFirstResponder()
-        
-        searchMovie(query: searchBar.text)
-    }
-    
-    func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
-        searchBar.resignFirstResponder()
-        
-        self.movies = []
-        self.infoLabel.text = "Start searching your favourite movies"
-        self.infoLabel.isHidden = false
-    }
-    
-    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
-        self.movies = []
-        if searchText.isEmpty {
-            self.infoLabel.text = "Start searching your favourite movies"
-            self.infoLabel.isHidden = false
-        }
-    }
-    
-}
-
-
